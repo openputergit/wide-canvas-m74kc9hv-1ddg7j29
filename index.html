@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Answer Script Evaluator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <script src="https://unpkg.com/tesseract.js@v2.1.0/dist/tesseract.min.js"></script>
+    <style>
+        .loading {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 999;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div id="loading" class="loading" style="display: none;">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold text-center mb-8 text-blue-600">AI Answer Script Evaluator</h1>
+
+        <!-- Question Input Section -->
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+            <h2 class="text-xl font-semibold mb-4">Step 1: Enter Question and Model Answer</h2>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Question</label>
+                    <textarea id="question" rows="3" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border"></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Model Answer</label>
+                    <textarea id="modelAnswer" rows="4" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border"></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Total Marks</label>
+                    <input type="number" id="totalMarks" class="mt-1 block w-32 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border" value="10">
+                </div>
+            </div>
+        </div>
+
+        <!-- Upload Section -->
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+            <h2 class="text-xl font-semibold mb-4">Step 2: Upload Answer Script</h2>
+            <div class="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 p-6 rounded-lg">
+                <i class="bi bi-cloud-upload text-4xl text-blue-500 mb-2"></i>
+                <p class="mb-2 text-sm text-gray-500">Upload scanned answer script</p>
+                <input type="file" id="imageUpload" accept="image/*" class="hidden">
+                <button onclick="document.getElementById('imageUpload').click()" class="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 transition">
+                    Choose File
+                </button>
+            </div>
+            <div id="preview" class="mt-4 hidden">
+                <img id="previewImage" class="max-w-full h-auto rounded-lg shadow-md">
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-8 hidden" id="resultsSection">
+            <h2 class="text-xl font-semibold mb-4">Evaluation Results</h2>
+            <div class="space-y-4">
+                <div>
+                    <h3 class="font-medium text-gray-700">Extracted Answer:</h3>
+                    <p id="extractedAnswer" class="mt-1 p-3 bg-gray-50 rounded-md"></p>
+                </div>
+                <div>
+                    <h3 class="font-medium text-gray-700">Score:</h3>
+                    <div class="flex items-center mt-2">
+                        <span id="score" class="text-2xl font-bold text-blue-600"></span>
+                        <span class="text-gray-500 ml-2">/ <span id="maxScore"></span></span>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="font-medium text-gray-700">Feedback:</h3>
+                    <p id="feedback" class="mt-1 p-3 bg-gray-50 rounded-md"></p>
+                </div>
+            </div>
+        </div>
+
+        <button id="evaluateBtn" class="w-full bg-blue-500 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-600 transition">
+            Evaluate Answer
+        </button>
+    </div>
+
+    <script>
+
+        // Initialize variables
+        let extractedText = '';
+        const loading = document.getElementById('loading');
+        const imageUpload = document.getElementById('imageUpload');
+        const previewImage = document.getElementById('previewImage');
+        const preview = document.getElementById('preview');
+        const evaluateBtn = document.getElementById('evaluateBtn');
+        const resultsSection = document.getElementById('resultsSection');
+
+        // Handle file upload and preview
+        imageUpload.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    previewImage.src = e.target.result;
+                    preview.classList.remove('hidden');
+                }
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // Handle evaluation
+        evaluateBtn.addEventListener('click', async function() {
+            const question = document.getElementById('question').value;
+            const modelAnswer = document.getElementById('modelAnswer').value;
+            const totalMarks = document.getElementById('totalMarks').value;
+
+            if (!question || !modelAnswer || !imageUpload.files[0]) {
+                alert('Please fill in all fields and upload an image');
+                return;
+            }
+
+            loading.style.display = 'flex';
+
+            try {
+                // Perform OCR
+                const result = await Tesseract.recognize(
+                    imageUpload.files[0],
+                    'eng',
+                    { logger: m => console.log(m) }
+                );
+                extractedText = result.data.text;
+
+                // Analyze answer using AI endpoint
+                const aiResponse = await fetch('https://r0c8kgwocscg8gsokogwwsw4.zetaverse.one/ai', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer k6wrnY30rWYSNfEPlWPO56rnRj42',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        messages: [
+                            {
+                                role: 'user',
+                                content: [
+                                    {
+                                        type: 'text',
+                                        text: `Question: ${question}\nModel Answer: ${modelAnswer}\nStudent's Answer: ${extractedText}\nTotal Marks: ${totalMarks}\n\nPlease evaluate the student's answer based on the model answer and provide:\n1. A score out of ${totalMarks}\n2. Detailed feedback explaining the score`
+                                    }
+                                ]
+                            }
+                        ]
+                    })
+                });
+
+                const aiData = await aiResponse.json();
+                const evaluation = aiData.message;
+
+                // Extract score and feedback
+                const scoreMatch = evaluation.match(/(\d+(\.\d+)?)\s*\/\s*\d+/);
+                const score = scoreMatch ? scoreMatch[1] : '0';
+
+                // Update UI
+                document.getElementById('extractedAnswer').textContent = extractedText;
+                document.getElementById('score').textContent = score;
+                document.getElementById('maxScore').textContent = totalMarks;
+                document.getElementById('feedback').textContent = evaluation;
+                resultsSection.classList.remove('hidden');
+
+            } catch (error) {
+                console.error('Error:', error);
+                alert('An error occurred during evaluation. Please try again.');
+            } finally {
+                loading.style.display = 'none';
+            }
+        });
+
+    </script>
+<script>document.body.addEventListener('wheel', e => { if (!e.ctrlKey) return; e.preventDefault(); return }, { passive: false })</script>
+	</body>
+</html>
